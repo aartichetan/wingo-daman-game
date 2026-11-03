@@ -14,7 +14,7 @@ const userSchema = new mongoose.Schema({
     wallet: { type: Number, default: 0 }
 });
 
-const User = mongoose.model('User', userSchema);
+const User = 
 
 const bcrypt = require('bcryptjs');
 const app = express();
