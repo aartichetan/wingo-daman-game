@@ -3,143 +3,156 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Daman Pro App with Betting</title>
+    <title>Daman WinGo Simulation</title>
     <script src="/socket.io/socket.io.js"></script>
     <style>
-        body { font-family: sans-serif; background-color: #f4f6f9; margin: 0; padding: 10px; display: flex; flex-direction: column; align-items: center; }
-        .daman-container { width: 100%; max-width: 450px; background: white; border-radius: 20px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); overflow: hidden; margin-bottom: 20px; }
-        .header { background: linear-gradient(135deg, #1e3c72, #2a5298); color: white; padding: 20px; text-align: center; }
-        .wallet-card { background: #e0f2fe; margin: 15px; padding: 15px; border-radius: 12px; display: flex; justify-content: space-between; align-items: center; font-weight: bold; }
-        .info-bar { display: flex; justify-content: space-between; padding: 15px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; }
-        .timer-val { font-size: 28px; font-weight: bold; color: #ef4444; }
+        body { font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; background-color: #f7f8ff; margin: 0; padding: 0; display: flex; justify-content: center; }
+        .app-container { width: 100%; max-width: 450px; background: #fff; min-height: 100vh; box-sizing: border-box; display: flex; flex-direction: column; box-shadow: 0 0 10px rgba(0,0,0,0.05); }
+        .nav-header { background: linear-gradient(90deg,#2979ff,#0045c4); color: white; padding: 15px; text-align: center; font-size: 18px; font-weight: bold; }
         
-        /* Betting Panel Style */
-        .bet-panel { padding: 15px; text-align: center; }
-        .btn-row { display: flex; justify-content: space-between; margin-bottom: 10px; gap: 8px; }
-        .btn { flex: 1; padding: 12px; border: none; border-radius: 8px; color: white; font-weight: bold; cursor: pointer; font-size: 15px; }
-        .btn-green { background: #10b981; } .btn-red { background: #ef4444; } .btn-violet { background: #8b5cf6; }
-        .btn-big { background: #f59e0b; } .btn-small { background: #3b82f6; }
-        .input-amount { width: 80%; padding: 10px; margin: 10px 0; border: 1px solid #cbd5e1; border-radius: 6px; text-align: center; font-size: 16px; }
+        /* Auth Container Layout */
+        .auth-box { padding: 20px; margin: 15px; border-radius: 12px; border: 1px solid #e2e8f0; background: #fdfdfd; }
+        .input-group { margin-bottom: 12px; }
+        .input-group label { display: block; font-size: 12px; color: #64748b; margin-bottom: 4px; font-weight: 600; }
+        .form-input { width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; font-size: 14px; }
+        .btn-action { width: 100%; padding: 10px; background: #0045c4; border: none; color: white; border-radius: 6px; font-weight: bold; cursor: pointer; margin-top: 5px; }
         
-        /* History Table */
-        .history-section { padding: 15px; }
-        .daman-table { width: 100%; border-collapse: collapse; text-align: center; }
-        .daman-table th { background: #f8fafc; padding: 10px; font-size: 13px; border-bottom: 2px solid #e2e8f0; }
-        .daman-table td { padding: 10px; font-size: 14px; border-bottom: 1px solid #f1f5f9; }
-        .ball { display: inline-block; width: 24px; height: 24px; line-height: 24px; border-radius: 50%; color: white; font-weight: bold; }
-        .bg-Green { background: #10b981; } .bg-Red { background: #ef4444; } .bg-Violet { background: #8b5cf6; }
-
-        /* Manual Verifier Box */
-        .verifier-box { width: 100%; max-width: 450px; background: #334155; color: white; border-radius: 20px; padding: 20px; box-sizing: border-box; }
-        .verify-input { width: 100%; padding: 8px; margin: 8px 0; border-radius: 4px; border: none; box-sizing: border-box; }
-        .verify-btn { width: 100%; padding: 10px; background: #10b981; border: none; color: white; font-weight: bold; border-radius: 6px; cursor: pointer; }
+        /* Dashboard System */
+        .game-dashboard { display: none; padding: 10px; }
+        .wallet-banner { background: linear-gradient(135deg,#ff9800,#f57c00); color: white; padding: 15px; border-radius: 12px; margin-bottom: 15px; display: flex; justify-content: space-between; font-weight: bold; }
+        .round-bar { display: flex; justify-content: space-between; background: #f8fafc; padding: 12px; border-radius: 8px; border: 1px solid #e2e8f0; font-size: 14px; }
+        
+        /* Selection Controls */
+        .bet-buttons { margin-top: 15px; text-align: center; }
+        .row-grid { display: flex; gap: 8px; margin-bottom: 8px; }
+        .choice-btn { flex: 1; padding: 12px; border: none; border-radius: 6px; color: white; font-weight: bold; cursor: pointer; font-size: 14px; }
+        .choice-green { background: #10b981; } .choice-red { background: #ef4444; } .choice-violet { background: #8b5cf6; }
+        .choice-big { background: #eab308; } .choice-small { background: #3b82f6; }
+        
+        /* Records Output Layout */
+        .history-wrap { margin-top: 20px; }
+        .history-header { font-size: 15px; font-weight: bold; padding-bottom: 8px; border-bottom: 2px solid #e2e8f0; }
+        .data-table { width: 100%; border-collapse: collapse; text-align: center; margin-top: 10px; }
+        .data-table th { font-size: 12px; color: #64748b; padding: 8px; background: #f8fafc; }
+        .data-table td { padding: 10px 6px; font-size: 13px; border-bottom: 1px solid #f1f5f9; }
+        .ball-icon { display: inline-block; width: 22px; height: 22px; line-height: 22px; border-radius: 50%; color: white; font-weight: bold; font-size: 12px; }
+        
+        .c-Green { background: #10b981; } .c-Red { background: #ef4444; } .c-Violet { background: #8b5cf6; }
+        .t-Big { color: #eab308; font-weight: bold; } .t-Small { color: #3b82f6; font-weight: bold; }
     </style>
 </head>
 <body>
 
-    <!-- MAIN DAMAN APP INTERFACE -->
-    <div class="daman-container">
-        <div class="header"><h2>🏆 DAMAN CLUB GAME</h2></div>
-        
-        <div class="wallet-card">
-            <span>💰 Balance:</span>
-            <span id="wallet-balance">₹10,000.00</span>
+<div class="app-container">
+    <div class="nav-header">Win Go 1Min</div>
+
+    <!-- REGISTER / LOGIN SYSTEM OVERLAY -->
+    <div id="auth-panel" class="auth-box">
+        <h4 style="margin-top:0; color:#1e293b;">Login / Registration</h4>
+        <div class="input-group">
+            <label>Mobile Number</label>
+            <input type="text" id="auth-mobile" class="form-input" placeholder="Enter Mobile">
+        </div>
+        <div class="input-group">
+            <label>Password</label>
+            <input type="password" id="auth-pass" class="form-input" placeholder="Enter Password">
+        </div>
+        <button class="btn-action" onclick="handleAuth('login')">Login</button>
+        <button class="btn-action" style="background:#64748b;" onclick="handleAuth('register')">Register Account</button>
+    </div>
+
+    <!-- MAIN ACTIVE GAME DASHBOARD -->
+    <div id="game-panel" class="game-dashboard">
+        <div class="wallet-banner">
+            <span>Balance Wallet</span>
+            <span id="display-wallet">₹0.00</span>
         </div>
 
-        <div class="info-bar">
-            <div><div>Period</div><div id="next-period" style="font-weight:bold;">Loading...</div></div>
-            <div><div>Time</div><div class="timer-val" id="timer-box">60</div></div>
+        <div class="round-bar">
+            <div>Period: <span id="round-period" style="font-weight:700;">Loading...</span></div>
+            <div style="text-align:right;">Time Left: <span id="round-timer" style="font-weight:800; color:#ef4444;">60</span>s</div>
         </div>
 
-        <!-- BETTING PANEL -->
-        <div class="bet-panel">
-            <input type="number" id="bet-amount" class="input-amount" value="100" placeholder="Enter Amount (₹)">
-            <div class="btn-row">
-                <button class="btn btn-green" onclick="placeBet('Green')">Green</button>
-                <button class="btn btn-violet" onclick="placeBet('Violet')">Violet</button>
-                <button class="btn btn-red" onclick="placeBet('Red')">Red</button>
+        <div class="bet-buttons">
+            <input type="number" id="stake-amount" class="form-input" value="10" style="text-align:center; margin-bottom:10px;" placeholder="Bet Amount (₹)">
+            <div class="row-grid">
+                <button class="choice-btn choice-green" onclick="submitBet('Green')">Green</button>
+                <button class="choice-btn choice-violet" onclick="submitBet('Violet')">Violet</button>
+                <button class="choice-btn choice-red" onclick="submitBet('Red')">Red</button>
             </div>
-            <div class="btn-row">
-                <button class="btn btn-big" onclick="placeBet('Big')">Big</button>
-                <button class="btn btn-small" onclick="placeBet('Small')">Small</button>
+            <div class="row-grid">
+                <button class="choice-btn choice-big" onclick="submitBet('Big')">Big</button>
+                <button class="choice-btn choice-small" onclick="submitBet('Small')">Small</button>
             </div>
-            <div style="font-size: 11px; color:#64748b;">Current Hash: <span id="curr-hash" style="word-break:break-all;"></span></div>
         </div>
 
-        <!-- HISTORY TABLE -->
-        <div class="history-section">
-            <table class="daman-table">
+        <div class="history-wrap">
+            <div class="history-header">Recent History</div>
+            <table class="data-table">
                 <thead><tr><th>Period</th><th>Number</th><th>Size</th><th>Color</th></tr></thead>
-                <tbody id="history-rows"></tbody>
+                <tbody id="history-data-rows"></tbody>
             </table>
         </div>
     </div>
+</div>
 
-    <!-- MANUAL PROVABLY FAIR VERIFIER -->
-    <div class="verifier-box">
-        <h3>🔍 Past Round Verifier (Check Legitimacy)</h3>
-        <p style="font-size:12px; color:#cbd5e1;">Daman ka ya apne server ka purana unhashed Seed aur Period daal kar verify karein:</p>
-        <label>Unhashed Server Seed:</label>
-        <input type="text" id="v-seed" class="verify-input" placeholder="e.g. 9b8d2f1a...">
-        <label>Period Number:</label>
-        <input type="text" id="v-period" class="verify-input" placeholder="e.g. 202611030001">
-        <button class="verify-btn" onclick="verifyPastRound()">Verify Calculation</button>
-        <div id="verify-result" style="margin-top:15px; font-weight:bold; font-size:15px; text-align:center;"></div>
-    </div>
+<script>
+    const socket = io();
+    let currentSessionUser = null;
+    let fallbackWallet = 100.00;
 
-    <!-- UTILITY SCRIPTS USING CRYPTO-JS FOR BROWSER VERIFYING -->
-    <script src="https://cloudflare.com"></script>
-    <script>
-        const socket = io();
-        
-        socket.on('timer_update', (data) => {
-            document.getElementById('timer-box').innerText = data.timer;
-            document.getElementById('next-period').innerText = data.nextPeriod;
-            document.getElementById('curr-hash').innerText = data.currentHash;
-        });
+    socket.on('timer_update', (data) => {
+        document.getElementById('round-timer').innerText = data.timer;
+        document.getElementById('round-period').innerText = data.nextPeriod;
+    });
 
-        socket.on('wallet_update', (balance) => {
-            document.getElementById('wallet-balance').innerText = `₹${balance}.00`;
-        });
+    async function handleAuth(type) {
+        const mobile = document.getElementById('auth-mobile').value.trim();
+        const password = document.getElementById('auth-pass').value.trim();
+        if(!mobile || !password) return alert("Fill all elements!");
 
-        socket.on('bet_success', msg => alert(msg));
-        socket.on('error_msg', msg => alert(msg));
+        try {
+            const response = await fetch(`/api/${type}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ mobile, password })
+            });
+            const data = await response.json();
+            if(data.error) return alert(data.error);
 
-        function placeBet(type) {
-            const amount = parseInt(document.getElementById('bet-amount').value);
-            socket.emit('place_bet', { type: type, amount: amount });
+            alert(data.message);
+            if(type === 'login' || data.message.includes('success')) {
+                currentSessionUser = mobile;
+                document.getElementById('auth-panel').style.display = 'none';
+                document.getElementById('game-panel').style.display = 'block';
+                document.getElementById('display-wallet').innerText = `₹${fallbackWallet.toFixed(2)}`;
+            }
+        } catch (e) {
+            alert("Auth Request Failed.");
         }
+    }
 
-        socket.on('round_ended', (result) => {
-            const rowHtml = `<tr>
-                <td>${result.period}<br><small style="font-size:9px;color:gray;">Seed: ${result.serverSeed.substring(0,8)}...</small></td>
-                <td><span class="ball bg-${result.color}">${result.number}</span></td>
-                <td>${result.size}</td>
-                <td style="color:${result.color === 'Green'?'green':'red'}">${result.color}</td>
-            </tr>`;
-            document.getElementById('history-rows').insertAdjacentHTML('afterbegin', rowHtml);
-        });
+    function submitBet(betType) {
+        if(!currentSessionUser) return alert("Login first!");
+        const amt = parseFloat(document.getElementById('stake-amount').value);
+        if(isNaN(amt) || amt <= 0) return alert("Invalid amount input");
+        if(fallbackWallet < amt) return alert("Insufficient account funds!");
 
-        // MANUAL VERIFIER CALCULATION (Asli Daman logic verification browser par)
-        function verifyPastRound() {
-            const seed = document.getElementById('v-seed').value.trim();
-            const period = document.getElementById('v-period').value.trim();
-            if(!seed || !period) return alert("Dono fields bharna zaroori hai!");
+        fallbackWallet -= amt;
+        document.getElementById('display-wallet').innerText = `₹${fallbackWallet.toFixed(2)}`;
+        alert(`Bet of ₹${amt} locked on ${betType}!`);
+    }
 
-            let clientSeed = "daman_client_secure"; 
-            let combinedMessage = `${clientSeed}:${period}`;
-            
-            // HMAC-SHA512 calculation on frontend
-            let hash = CryptoJS.HmacSHA512(combinedMessage, seed).toString(CryptoJS.enc.Hex);
-            let hexString = hash.substring(0, 8);
-            let decimalNumber = parseInt(hexString, 16);
-            let finalNumber = decimalNumber % 10;
-            
-            let color = (finalNumber === 0 || finalNumber === 5) ? "Violet" : (finalNumber % 2 === 0 ? "Red" : "Green");
-            let size = (finalNumber >= 5) ? "Big" : "Small";
-
-            document.getElementById('verify-result').innerHTML = `Calculated Result:<br>💥 Number: ${finalNumber} | Size: ${size} | Color: ${color}`;
-        }
-    </script>
+    socket.on('round_ended', (result) => {
+        const row = `<tr>
+            <td style="color:#64748b;">${result.period}</td>
+            <td><span class="ball-icon c-${result.color}">${result.number}</span></td>
+            <td class="t-${result.size}">${result.size}</td>
+            <td style="color:${result.color==='Green'?'#10b981':'#ef4444'}">${result.color}</td>
+        </tr>`;
+        document.getElementById('history-data-rows').insertAdjacentHTML('afterbegin', row);
+    });
+</script>
 </body>
 </html>
+
