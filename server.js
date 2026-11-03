@@ -2,11 +2,12 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const crypto = require('crypto');
-const bcrypt = require('bcryptjs');
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server);
+const io = new Server(server, {
+    cors: { origin: "*", methods: ["GET", "POST"] }
+});
 
 app.use(express.static('public'));
 app.use(express.json());
@@ -14,7 +15,9 @@ app.use(express.json());
 let timer = 30; 
 let roundCounter = 10874; 
 let gameHistory = [];
-let databaseUsers = {}; // Secure dictionary for handling real live sessions runtime
+
+// Temporary storage (Bina database ke users save rakhne ke liye)
+let temporaryUsers = {}; 
 
 function getDamanPeriod() {
     return `202611011000${roundCounter}`;
@@ -22,42 +25,42 @@ function getDamanPeriod() {
 
 let currentServerSeed = crypto.randomBytes(16).toString('hex');
 
-app.post('/api/register', async (req, res) => {
+// 1. REGISTER API (Bina database crash ke kaam karegi)
+app.post('/api/register', (req, res) => {
     const { mobile, password } = req.body;
-    if(!mobile || !password) return res.status(400).json({ error: "Invalid data arrays" });
-    if(databaseUsers[mobile]) return res.status(400).json({ error: "User profile exists already" });
+    if(!mobile || !password) return res.status(400).json({ error: "Fields cannot be empty!" });
+    if(temporaryUsers[mobile]) return res.status(400).json({ error: "Mobile number already registered!" });
     
-    const hash = await bcrypt.hash(password, 10);
-    databaseUsers[mobile] = { password: hash, wallet: 500 }; // ₹500 Signup Bonus
-    res.json({ message: "Account registered successfully! Please Login." });
+    // Memory me user save karna
+    temporaryUsers[mobile] = { password: password, wallet: 500 }; // ₹500 FREE BONUS
+    res.json({ message: "Registration successful! Auto-logging in..." });
 });
 
-app.post('/api/login', async (req, res) => {
+// 2. LOGIN API
+app.post('/api/login', (req, res) => {
     const { mobile, password } = req.body;
-    if(!databaseUsers[mobile]) return res.status(400).json({ error: "Account not registered!" });
+    if(!temporaryUsers[mobile]) return res.status(400).json({ error: "User not found! Please register first." });
+    if(temporaryUsers[mobile].password !== password) return res.status(400).json({ error: "Incorrect password!" });
     
-    const match = await bcrypt.compare(password, databaseUsers[mobile].password);
-    if(!match) return res.status(400).json({ error: "Wrong security password match" });
-    
-    res.json({ message: "Logged in successfully!", wallet: databaseUsers[mobile].wallet });
+    res.json({ message: "Logged in successfully!", wallet: temporaryUsers[mobile].wallet });
 });
 
 io.on('connection', (socket) => {
     socket.on('simulate_deposit', (data) => {
-        if(databaseUsers[data.mobile]) {
-            databaseUsers[data.mobile].wallet += data.amount;
-            socket.emit('wallet_refresh', databaseUsers[data.mobile].wallet);
+        if(temporaryUsers[data.mobile]) {
+            temporaryUsers[data.mobile].wallet += data.amount;
+            socket.emit('wallet_refresh', temporaryUsers[data.mobile].wallet);
         }
     });
 
     socket.on('place_simulation_bet', (data) => {
-        let user = databaseUsers[data.mobile];
-        if(!user) return socket.emit('bet_status', { msg: "Authentication session expired" });
-        if(user.wallet < data.cost) return socket.emit('bet_status', { msg: "Insufficient balance limits!" });
+        let user = temporaryUsers[data.mobile];
+        if(!user) return socket.emit('bet_status', { msg: "Session expired, please login again!" });
+        if(user.wallet < data.cost) return socket.emit('bet_status', { msg: "Insufficient balance!" });
         
         user.wallet -= data.cost;
         socket.emit('wallet_refresh', user.wallet);
-        socket.emit('bet_status', { msg: `Bet order of ₹${data.cost} registered on [${data.target}]` });
+        socket.emit('bet_status', { msg: `Bet of ₹${data.cost} placed on [${data.target}]` });
     });
 });
 
@@ -85,4 +88,4 @@ setInterval(() => {
 }, 1000);
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => console.log(`Active core running on port ${PORT}`));
+server.listen(PORT, () => console.log(`Server active on port ${PORT}`));
