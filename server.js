@@ -3,7 +3,6 @@ const http = require('http');
 const { Server } = require('socket.io');
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
-const { Pool } = require('pg');
 
 const app = express();
 const server = http.createServer(app);
@@ -12,38 +11,12 @@ const io = new Server(server);
 app.use(express.static('public'));
 app.use(express.json());
 
-// Database Pool Config (Auto-detects URL or falls back to local simulation memory if not available)
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false
-});
-
 let timer = 60; 
 let currentServerSeed = "";
 let currentHash = "";
 let gameHistory = [];
 let roundCounter = 1;
-
-// Database Table structure logic for Users
-async function initDB() {
-    if (process.env.DATABASE_URL) {
-        await pool.query(`
-            CREATE TABLE IF NOT EXISTS users (
-                id SERIAL PRIMARY KEY,
-                mobile VARCHAR(15) UNIQUE NOT NULL,
-                password TEXT NOT NULL,
-                wallet INT DEFAULT 100
-            );
-        `);
-        console.log('Cloud Database tables active!');
-    } else {
-        console.log('Running in memory fallback mode.');
-    }
-}
-initDB().catch(console.error);
-
-// Virtual In-Memory storage fallback in case database variables take time to load
-let memoryUsers = {};
+let memoryUsers = {}; // In-memory database fallback to prevent any database crash
 
 function getDamanPeriod() {
     const today = new Date();
@@ -92,22 +65,13 @@ function calculateResult() {
 
 generateNewRound();
 
-// --- SECURE USER ROUTING WITH FALLBACK CHECKS ---
 app.post('/api/register', async (req, res) => {
     try {
         const { mobile, password } = req.body;
         if(!mobile || !password) return res.status(400).json({ error: "Missing fields" });
         const hashedPassword = await bcrypt.hash(password, 10);
-
-        if (process.env.DATABASE_URL) {
-            const check = await pool.query('SELECT * FROM users WHERE mobile = $1', [mobile]);
-            if(check.rows.length > 0) return res.status(400).json({ error: "Already registered" });
-            
-            await pool.query('INSERT INTO users (mobile, password, wallet) VALUES ($1, $2, $3)', [mobile, hashedPassword, 100]);
-        } else {
-            if(memoryUsers[mobile]) return res.status(400).json({ error: "Already registered" });
-            memoryUsers[mobile] = { password: hashedPassword, wallet: 100 };
-        }
+        if(memoryUsers[mobile]) return res.status(400).json({ error: "Already registered" });
+        memoryUsers[mobile] = { password: hashedPassword, wallet: 100 };
         res.json({ message: "Registration successful!" });
     } catch (err) {
         res.status(500).json({ error: "Registration failed" });
@@ -117,21 +81,10 @@ app.post('/api/register', async (req, res) => {
 app.post('/api/login', async (req, res) => {
     try {
         const { mobile, password } = req.body;
-        let user;
-
-        if (process.env.DATABASE_URL) {
-            const result = await pool.query('SELECT * FROM users WHERE mobile = $1', [mobile]);
-            if(result.rows.length === 0) return res.status(400).json({ error: "User not found" });
-            user = result.rows[0];
-        } else {
-            if(!memoryUsers[mobile]) return res.status(400).json({ error: "User not found" });
-            user = memoryUsers[mobile];
-        }
-
-        const isMatch = await bcrypt.compare(password, user.password);
+        if(!memoryUsers[mobile]) return res.status(400).json({ error: "User not found" });
+        const isMatch = await bcrypt.compare(password, memoryUsers[mobile].password);
         if(!isMatch) return res.status(400).json({ error: "Wrong password" });
-
-        res.json({ message: "Login success", wallet: user.wallet, mobile: mobile });
+        res.json({ message: "Login success", wallet: memoryUsers[mobile].wallet, mobile: mobile });
     } catch (err) {
         res.status(500).json({ error: "Login failed" });
     }
