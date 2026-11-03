@@ -2,26 +2,21 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const crypto = require('crypto');
-const mongoose = require('mongoose'); // MongoDB Connection (Aap local ya cloud use kar sakte hain)
-mongoose.connect('mongodb://localhost:27017/wingo_db')
-  .then(() => console.log('MongoDB Connected Successfully!'))
-  .catch(err => console.log('Database Connection Error:', err));
-
-// User Schema Model
-const userSchema = new mongoose.Schema({
-    mobile: { type: String, unique: true, required: true },
-    password: { type: String, required: true },
-    wallet: { type: Number, default: 0 }
-});
-
-const User = 
-
 const bcrypt = require('bcryptjs');
+const { Pool } = require('pg');
+
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
 app.use(express.static('public'));
+app.use(express.json());
+
+// Database Pool Config (Auto-detects URL or falls back to local simulation memory if not available)
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false
+});
 
 let timer = 60; 
 let currentServerSeed = "";
@@ -29,9 +24,26 @@ let currentHash = "";
 let gameHistory = [];
 let roundCounter = 1;
 
-// Dummy Wallet aur active bets store karne ke liye
-let userWallet = 10000; 
-let activeBets = []; 
+// Database Table structure logic for Users
+async function initDB() {
+    if (process.env.DATABASE_URL) {
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS users (
+                id SERIAL PRIMARY KEY,
+                mobile VARCHAR(15) UNIQUE NOT NULL,
+                password TEXT NOT NULL,
+                wallet INT DEFAULT 100
+            );
+        `);
+        console.log('Cloud Database tables active!');
+    } else {
+        console.log('Running in memory fallback mode.');
+    }
+}
+initDB().catch(console.error);
+
+// Virtual In-Memory storage fallback in case database variables take time to load
+let memoryUsers = {};
 
 function getDamanPeriod() {
     const today = new Date();
@@ -45,8 +57,6 @@ function getDamanPeriod() {
 function generateNewRound() {
     currentServerSeed = crypto.randomBytes(16).toString('hex');
     currentHash = crypto.createHash('sha256').update(currentServerSeed).digest('hex');
-    activeBets = []; // Naye round ke liye bets khali
-    console.log(`\n[Daman Loop] New Round Hash: ${currentHash}`);
 }
 
 function calculateResult() {
@@ -74,48 +84,57 @@ function calculateResult() {
         hash: currentHash
     };
 
-    // --- BET EVALUATION LOGIC ---
-    let totalWin = 0;
-    activeBets.forEach(bet => {
-        let isWin = false;
-        if (bet.type === color || bet.type === size || bet.type == finalNumber) {
-            isWin = true;
-        }
-        if (isWin) {
-            if (['Green', 'Red', 'Big', 'Small'].includes(bet.type)) totalWin += bet.amount * 2;
-            else if (bet.type === 'Violet') totalWin += bet.amount * 4.5;
-            else totalWin += bet.amount * 9; // Exact Number Win
-        }
-    });
-
-    userWallet += totalWin;
-    resultData.walletBalance = userWallet;
-
     gameHistory.unshift(resultData);
     if (gameHistory.length > 10) gameHistory.pop();
-
     roundCounter++;
     return resultData;
 }
 
 generateNewRound();
 
-// Live Players Connections
-io.on('connection', (socket) => {
-    // Naye user ko wallet balance bhejna
-    socket.emit('wallet_update', userWallet);
+// --- SECURE USER ROUTING WITH FALLBACK CHECKS ---
+app.post('/api/register', async (req, res) => {
+    try {
+        const { mobile, password } = req.body;
+        if(!mobile || !password) return res.status(400).json({ error: "Missing fields" });
+        const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Bet receive karne ka listener
-    socket.on('place_bet', (betData) => {
-        if (timer <= 5) return socket.emit('error_msg', 'Betting closed for this round!');
-        if (userWallet < betData.amount) return socket.emit('error_msg', 'Insufficient Balance!');
+        if (process.env.DATABASE_URL) {
+            const check = await pool.query('SELECT * FROM users WHERE mobile = $1', [mobile]);
+            if(check.rows.length > 0) return res.status(400).json({ error: "Already registered" });
+            
+            await pool.query('INSERT INTO users (mobile, password, wallet) VALUES ($1, $2, $3)', [mobile, hashedPassword, 100]);
+        } else {
+            if(memoryUsers[mobile]) return res.status(400).json({ error: "Already registered" });
+            memoryUsers[mobile] = { password: hashedPassword, wallet: 100 };
+        }
+        res.json({ message: "Registration successful!" });
+    } catch (err) {
+        res.status(500).json({ error: "Registration failed" });
+    }
+});
 
-        userWallet -= betData.amount;
-        activeBets.push(betData);
-        
-        socket.emit('wallet_update', userWallet);
-        socket.emit('bet_success', `Bet of ₹${betData.amount} placed on ${betData.type}`);
-    });
+app.post('/api/login', async (req, res) => {
+    try {
+        const { mobile, password } = req.body;
+        let user;
+
+        if (process.env.DATABASE_URL) {
+            const result = await pool.query('SELECT * FROM users WHERE mobile = $1', [mobile]);
+            if(result.rows.length === 0) return res.status(400).json({ error: "User not found" });
+            user = result.rows[0];
+        } else {
+            if(!memoryUsers[mobile]) return res.status(400).json({ error: "User not found" });
+            user = memoryUsers[mobile];
+        }
+
+        const isMatch = await bcrypt.compare(password, user.password);
+        if(!isMatch) return res.status(400).json({ error: "Wrong password" });
+
+        res.json({ message: "Login success", wallet: user.wallet, mobile: mobile });
+    } catch (err) {
+        res.status(500).json({ error: "Login failed" });
+    }
 });
 
 setInterval(() => {
@@ -124,65 +143,18 @@ setInterval(() => {
     } else {
         let roundResult = calculateResult();
         io.emit('round_ended', roundResult);
-        io.emit('wallet_update', userWallet);
         timer = 60;
         generateNewRound();
     }
-
     io.emit('timer_update', {
         timer: timer,
         currentHash: currentHash,
         nextPeriod: getDamanPeriod()
     });
 }, 1000);
-// Express middleware passwords aur body read karne ke liye
-app.use(express.json());
 
-// 1. REGISTRATION API
-app.post('/api/register', async (req, res) => {
-    try {
-        const { mobile, password } = req.body;
-        
-        // Check karna ki user pehle se toh nahi hai
-        const userExists = await User.findOne({ mobile });
-        if(userExists) return res.status(400).json({ error: "Mobile number already registered!" });
-
-        // Password ko secure (Hash) karna
-        const hashedPassword = await bcrypt.hash(password, 10);
-
-        // Naya user create karna ₹100 welcome bonus ke sath
-        const newUser = new User({
-            mobile,
-            password: hashedPassword,
-            wallet: 100 
-        });
-
-        await newUser.save();
-        res.json({ message: "Registration successful! Open Login Page." });
-    } catch (err) {
-        res.status(500).json({ error: "Server Error during registration" });
-    }
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => {
+    console.log(`System initialized running on port ${PORT}`);
 });
 
-// 2. LOGIN API
-app.post('/api/login', async (req, res) => {
-    try {
-        const { mobile, password } = req.body;
-        
-        // User ko dhoodhna
-        const user = await User.findOne({ mobile });
-        if(!user) return res.status(400).json({ error: "User not found!" });
-
-        // Password check karna
-        const isMatch = await bcrypt.compare(password, user.password);
-        if(!isMatch) return res.status(400).json({ error: "Invalid password!" });
-
-        res.json({ message: "Login successful!", wallet: user.wallet, mobile: user.mobile });
-    } catch (err) {
-        res.status(500).json({ error: "Server Error during login" });
-    }
-});
-
-server.listen(3000, () => {
-    console.log('Daman Full Engine running on http://localhost:3000');
-});
